@@ -1,10 +1,7 @@
 """
-Cross-Division Transfer Performance Comparison
-================================================
-Streamlit app to visualize player performance before and after
-transfers between divisions within the same country.
-
-Countries: Mexico, Sweden, England
+Transfer Performance Lab
+========================
+Position-aware player performance analysis across league transfers.
 """
 
 import streamlit as st
@@ -14,26 +11,220 @@ import plotly.graph_objects as go
 from pathlib import Path
 import os
 
-st.set_page_config(
-    page_title="Cross-Division Transfer Analysis",
-    page_icon="⚽",
-    layout="wide",
-)
+# ── Page Config ──────────────────────────────────────────────────────────────
 
-# ── Constants ────────────────────────────────────────────────────────────────
+st.set_page_config(page_title="Transfer Performance Lab", page_icon="⚽", layout="wide")
 
-COMPETITION_CONFIG = {
-    "Mexico 🇲🇽": {
-        "leagues": {615: "Liga de Expansión MX", 617: "Liga MX"},
-        "pairs": [(615, 617), (617, 615)],
+# ── Dark theme CSS (Opta-style) ──────────────────────────────────────────────
+
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+/* Global */
+html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
+.block-container { padding-top: 1.5rem; max-width: 1200px; }
+
+/* Header */
+.player-card {
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    border-radius: 12px; padding: 28px 32px; margin-bottom: 24px;
+    border-left: 4px solid #e94560; color: #eee;
+}
+.player-card h1 { color: #fff; margin: 0 0 4px 0; font-size: 2rem; font-weight: 700; }
+.player-card .position-badge {
+    display: inline-block; background: #e94560; color: #fff;
+    padding: 3px 14px; border-radius: 20px; font-size: 0.8rem;
+    font-weight: 600; margin-left: 10px; vertical-align: middle;
+}
+.player-card .transfer-route {
+    color: #a0aec0; font-size: 0.95rem; margin-top: 8px;
+}
+.player-card .transfer-route b { color: #e2e8f0; }
+
+/* KPI cards */
+.kpi-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px; margin: 20px 0;
+}
+.kpi-card {
+    background: #0f3460; border-radius: 10px; padding: 16px;
+    text-align: center; border: 1px solid #1a1a4e;
+}
+.kpi-card .label { color: #8899aa; font-size: 0.7rem; text-transform: uppercase;
+    font-weight: 600; letter-spacing: 0.5px; margin-bottom: 6px; }
+.kpi-card .value { color: #fff; font-size: 1.4rem; font-weight: 700; }
+.kpi-card .delta { font-size: 0.8rem; font-weight: 600; margin-top: 4px; }
+.delta-up { color: #48bb78; }
+.delta-down { color: #fc8181; }
+.delta-neutral { color: #a0aec0; }
+
+/* Section headers */
+.section-header {
+    color: #e94560; font-size: 0.85rem; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 1.5px;
+    margin: 32px 0 16px 0; padding-bottom: 8px;
+    border-bottom: 2px solid #e94560;
+}
+
+/* AI card */
+.ai-card {
+    background: linear-gradient(135deg, #1a1a2e 0%, #0f3460 100%);
+    border-radius: 12px; padding: 24px; margin-top: 24px;
+    border: 1px solid #1a1a4e;
+}
+.ai-card h3 { color: #e94560; margin-top: 0; font-size: 1rem; }
+.ai-card p, .ai-card li { color: #cbd5e0; line-height: 1.7; }
+
+/* Metric detail cards */
+.metric-row {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 10px; margin: 12px 0;
+}
+.metric-item {
+    background: #16213e; border-radius: 8px; padding: 12px 14px;
+    border: 1px solid #1a1a4e;
+}
+.metric-item .m-label { color: #8899aa; font-size: 0.72rem; font-weight: 500; }
+.metric-item .m-vals {
+    display: flex; justify-content: space-between; align-items: baseline; margin-top: 4px;
+}
+.metric-item .m-before { color: #63b3ed; font-size: 0.95rem; font-weight: 600; }
+.metric-item .m-after { color: #fc8181; font-size: 0.95rem; font-weight: 600; }
+.metric-item .m-arrow { color: #718096; font-size: 0.8rem; }
+
+/* Sidebar */
+section[data-testid="stSidebar"] { background: #0a0a1a; }
+section[data-testid="stSidebar"] .stSelectbox label,
+section[data-testid="stSidebar"] .stCheckbox label { color: #a0aec0 !important; }
+
+/* Hide streamlit branding */
+#MainMenu, footer, header { visibility: hidden; }
+</style>
+""", unsafe_allow_html=True)
+
+# ── Position Templates ───────────────────────────────────────────────────────
+
+POSITION_CONFIG = {
+    "Goalkeeper": {
+        "identity": [
+            ("Commanding", "Defensive aerials won per 90"),
+            ("Shot Stopping", "Defending 1v1 %"),
+            ("Distribution", "Passes (xT) per 90"),
+            ("Sweeping", "High recoveries per 90"),
+            ("Ball Playing", "Ball progression (xT) per 90"),
+            ("Composure", "Composure"),
+            ("Involvement", "Involvement"),
+        ],
+        "detail_metrics": [
+            "Defensive actions per 90", "Defensive aerials won %",
+            "Interceptions per 90", "Ball recoveries per 90",
+            "Passes (xT) per 90", "Touches per 90",
+            "Long ball receptions per 90", "Pressure resistance %",
+            "Losses per 90",
+        ],
+        "llm_focus": "shot stopping, distribution quality, sweeping/claiming ability, and composure under pressure",
     },
-    "Sweden 🇸🇪": {
-        "leagues": {808: "Allsvenskan", 818: "Superettan"},
-        "pairs": [(808, 818), (818, 808)],
+    "Central Defender": {
+        "identity": [
+            ("Aerial Dom.", "Aerials won per 90"),
+            ("Tackling", "True tackles won per 90"),
+            ("Progression", "Ball progression (xT) per 90"),
+            ("Passing", "Passing quality"),
+            ("Defensive IQ", "Intelligent defence"),
+            ("Duels", "Winning duels"),
+            ("Heading", "Defensive heading"),
+        ],
+        "detail_metrics": [
+            "Aerials won %", "Defensive duels won %", "Tackle success %",
+            "Interceptions per 90", "Defensive actions per 90",
+            "Passes (xT) per 90", "Deep completions per 90",
+            "Carries (xT) per 90", "Pressure resistance %",
+            "Losses per 90", "Possessions won per 90",
+            "Counterpressing per 90",
+        ],
+        "llm_focus": "aerial dominance, tackling, ball progression from the back, and defensive reading of the game",
     },
-    "England 🏴󠁧󠁢󠁥󠁮󠁧󠁿": {
-        "leagues": {346: "Championship", 364: "Premier League"},
-        "pairs": [(346, 364), (364, 346)],
+    "Full Back": {
+        "identity": [
+            ("Offensive Output", "xA per 90"),
+            ("Crossing", "Crosses (xT) per 90"),
+            ("Progression", "Progression"),
+            ("Active Defence", "Active defence"),
+            ("1v1 Defending", "Defending 1v1 %"),
+            ("Involvement", "Involvement"),
+            ("Dribbling", "Dribbling"),
+        ],
+        "detail_metrics": [
+            "xA per 90", "Key passes per 90", "Crosses (xT) per 90",
+            "Deep completions per 90", "Deep runs (xT) per 90",
+            "Ball progression (xT) per 90", "Carries (xT) per 90",
+            "Defensive duels won per 90", "Interceptions per 90",
+            "Touches per 90", "Pressure resistance %",
+        ],
+        "llm_focus": "offensive contribution (crosses, xA), progressive carrying, and defensive reliability in 1v1 situations",
+    },
+    "Midfielder": {
+        "identity": [
+            ("Creativity", "xGCreated per 90"),
+            ("Progression", "Ball progression (xT) per 90"),
+            ("Passing", "Passing quality"),
+            ("Pressing", "Pressing"),
+            ("Composure", "Composure"),
+            ("Involvement", "Involvement"),
+            ("Providing", "Providing teammates"),
+        ],
+        "detail_metrics": [
+            "xA per 90", "Assists per 90", "Key passes per 90",
+            "Creative passes per 90", "Playmaking passes per 90",
+            "Passes (xT) per 90", "Deep completions per 90",
+            "Ball progression (xT) per 90", "Carries (xT) per 90",
+            "Counterpressing per 90", "Possessions won per 90",
+            "Ball recoveries per 90", "xGBuildup per 90",
+            "xGChain per possession", "Pressure resistance %",
+            "Touches per 90",
+        ],
+        "llm_focus": "creativity, ball progression, pressing intensity, game control, and ability to provide passing options",
+    },
+    "Winger": {
+        "identity": [
+            ("Goal Threat", "xG per 90"),
+            ("Creativity", "xA per 90"),
+            ("Dribbling", "Dribbling"),
+            ("Run Quality", "Run quality"),
+            ("Box Presence", "Box threat"),
+            ("Involvement", "Involvement"),
+            ("Providing", "Providing teammates"),
+        ],
+        "detail_metrics": [
+            "xG per 90", "Goals per 90", "xGOT per 90", "Shot conversion %",
+            "xA per 90", "Key passes per 90", "Crosses (xT) per 90",
+            "Dribbles (xT) per 90", "Dribbles success %",
+            "Successful 1v1 per 90", "Deep runs (xT) per 90",
+            "Box entries per 90", "Touches in box per 90",
+            "Counterpressing per 90",
+        ],
+        "llm_focus": "goal threat (xG, finishing), creativity (xA, key passes), dribbling ability, and movement quality into the box",
+    },
+    "Striker": {
+        "identity": [
+            ("Finishing", "Finishing"),
+            ("Goal Threat", "xG per 90"),
+            ("Poaching", "Poaching"),
+            ("Hold-up", "Hold-up play"),
+            ("Box Presence", "Box threat"),
+            ("Aerial Threat", "Aerial threat"),
+            ("Run Quality", "Run quality"),
+        ],
+        "detail_metrics": [
+            "xG per 90", "Goals per 90", "xGOT per 90", "Goals - xG",
+            "Shot conversion %", "xG per shot", "Goals per box touch",
+            "Touches in box per 90", "Box entries per 90",
+            "Headed plays per 90", "Aerials won per 90",
+            "xA per 90", "Linkups per 90",
+            "Dribbles (xT) per 90",
+        ],
+        "llm_focus": "finishing quality, movement and poaching, hold-up play, aerial presence, and link-up play",
     },
 }
 
@@ -45,302 +236,279 @@ RADAR_METRICS = [
     "Effectiveness", "Territorial dominance", "Chance prevention",
 ]
 
-ATTACKING_METRICS = [
-    "xG per 90", "Goals per 90", "xGOT per 90", "Shot conversion %",
-    "Goals per box touch", "xG per box touch", "xG per shot",
-    "Touches in box per 90", "Box entries per 90",
-    "Dribbles (xT) per 90", "Dribbles success %",
-    "Goals - xG", "xGDribble per 90",
-]
+# ── Colors ───────────────────────────────────────────────────────────────────
 
-DEFENSIVE_METRICS = [
-    "Defensive actions per 90", "True tackles won per 90", "Tackle success %",
-    "Interceptions per 90", "Defending 1v1 %",
-    "Defensive duels won per 90", "Defensive duels won %",
-    "Defensive aerials won per 90", "Defensive aerials won %",
-    "Ball recoveries per 90", "High recoveries per 90",
-    "Possessions won per 90", "Counterpressing per 90",
-]
-
-PASSING_METRICS = [
-    "xA per 90", "Assists per 90", "Key passes per 90",
-    "Creative passes per 90", "Playmaking passes per 90",
-    "xGCreated per 90", "xGBuildup per 90",
-    "Passes (xT) per 90", "Deep completions per 90",
-    "Ball progression (xT) per 90", "Carries (xT) per 90",
-    "Ball runs (xT) per 90", "Deep runs (xT) per 90",
-    "Crosses (xT) per 90",
-]
-
-PHYSICAL_METRICS = [
-    "Aerials per 90", "Aerials won %", "Aerials won per 90",
-    "Headed plays per 90", "Pressure resistance %",
-    "Touches per 90", "Linkups per 90", "Losses per 90",
-    "High turnovers per 90", "xGChain per possession",
-    "xG + xA per 100 touches",
-]
-
+C_BEFORE = "#63b3ed"   # blue
+C_AFTER = "#e94560"    # red/coral
+C_BG = "#1a1a2e"
+C_CARD = "#16213e"
 
 # ── Data Loading ─────────────────────────────────────────────────────────────
 
 @st.cache_data
 def load_data():
-    """Load transfer data, competition metadata, and team name lookup."""
     base = Path(__file__).parent
+    df = pd.read_parquet(base / "../../thesis_data/raw_data_twelve/Twelve/male_transfer_model.parquet")
+    comps = pd.read_parquet(base / "../../thesis_data/raw_data_twelve/Wyscout/competitions_wyscout.parquet")
 
-    df = pd.read_parquet(
-        base / "../../thesis_data/raw_data_twelve/Twelve/male_transfer_model.parquet"
-    )
-    comps = pd.read_parquet(
-        base / "../../thesis_data/raw_data_twelve/Wyscout/competitions_wyscout.parquet"
-    )
+    # Competition lookups
+    comp_meta = comps.drop_duplicates("competition_id").set_index("competition_id")
+    comp_to_name = comp_meta["name"].to_dict()
+    comp_to_country = comp_meta["country"].to_dict()
 
-    # Team name lookup from processed data
+    # Team name lookup
     team_names = {}
     clean_path = base / "../../thesis_data/processed/transfers_clean.parquet"
     if clean_path.exists():
-        clean = pd.read_parquet(
-            clean_path,
-            columns=["from_team_id", "to_team_id", "tm_team_from", "tm_team_to"],
-        )
+        clean = pd.read_parquet(clean_path, columns=["from_team_id", "to_team_id", "tm_team_from", "tm_team_to"])
         for _, row in clean.dropna(subset=["tm_team_from"]).iterrows():
             team_names[int(row["from_team_id"])] = row["tm_team_from"]
         for _, row in clean.dropna(subset=["tm_team_to"]).iterrows():
             team_names[int(row["to_team_id"])] = row["tm_team_to"]
 
-    return df, comps, team_names
-
-
-def filter_cross_division(df, country):
-    """Filter to cross-division transfers for a country, same position only."""
-    config = COMPETITION_CONFIG[country]
-    comp_ids = list(config["leagues"].keys())
-
-    mask = (
-        df["from_competition"].isin(comp_ids)
-        & df["to_competition"].isin(comp_ids)
-        & (df["from_competition"] != df["to_competition"])
+    # Pre-filter: only cross-league, same position
+    df = df[
+        (df["from_competition"] != df["to_competition"])
         & (df["from_position"] == df["to_position"])
-    )
-    return df[mask].copy()
+    ].copy()
+
+    # Add readable names
+    df["from_league"] = df["from_competition"].map(comp_to_name).fillna("Unknown")
+    df["to_league"] = df["to_competition"].map(comp_to_name).fillna("Unknown")
+    df["from_country"] = df["from_competition"].map(comp_to_country).fillna("Unknown")
+    df["to_country"] = df["to_competition"].map(comp_to_country).fillna("Unknown")
+
+    return df, team_names
 
 
-def team_name(team_id, team_names):
-    """Return team name or fallback to ID."""
+def tname(team_id, team_names):
     return team_names.get(int(team_id), f"Team {team_id}")
 
 
 # ── Sidebar ──────────────────────────────────────────────────────────────────
 
 def render_sidebar(df, team_names):
-    """Render cascading filters. Returns (country, filtered_df, player_row)."""
-    st.sidebar.header("⚽ Filters")
+    st.sidebar.markdown("### ⚽ Transfer Performance Lab")
+    st.sidebar.caption("Filter to explore player performance across league transfers")
+    st.sidebar.divider()
 
-    # 1. Country
-    country = st.sidebar.selectbox("Country", list(COMPETITION_CONFIG.keys()))
-    filtered = filter_cross_division(df, country)
-    config = COMPETITION_CONFIG[country]
-    league_names = config["leagues"]
+    filtered = df.copy()
 
-    # 2. Direction
-    directions = (
-        filtered.groupby(["from_competition", "to_competition"])
-        .size()
-        .reset_index(name="n")
-    )
-    dir_options = []
-    for _, row in directions.iterrows():
-        fr = league_names[row["from_competition"]]
-        to = league_names[row["to_competition"]]
-        dir_options.append((row["from_competition"], row["to_competition"], f"{fr} → {to}"))
+    # 1. From Country
+    countries_from = sorted(filtered["from_country"].unique())
+    sel_from_country = st.sidebar.selectbox("From Country", ["All"] + countries_from)
+    if sel_from_country != "All":
+        filtered = filtered[filtered["from_country"] == sel_from_country]
 
-    if not dir_options:
-        st.sidebar.warning("No transfers found for this country.")
-        return country, filtered, pd.DataFrame()
+    # 2. From League
+    from_leagues = sorted(filtered["from_league"].unique())
+    sel_from_league = st.sidebar.selectbox("From League", ["All"] + from_leagues)
+    if sel_from_league != "All":
+        filtered = filtered[filtered["from_league"] == sel_from_league]
 
-    sel_dir = st.sidebar.selectbox(
-        "Transfer Direction", dir_options, format_func=lambda x: x[2]
-    )
-    filtered = filtered[
-        (filtered["from_competition"] == sel_dir[0])
-        & (filtered["to_competition"] == sel_dir[1])
-    ]
+    # 3. To Country
+    countries_to = sorted(filtered["to_country"].unique())
+    sel_to_country = st.sidebar.selectbox("To Country", ["All"] + countries_to)
+    if sel_to_country != "All":
+        filtered = filtered[filtered["to_country"] == sel_to_country]
 
-    # 3. Include promotion/relegation
-    include_promo = st.sidebar.checkbox(
-        "Include promotion/relegation (same team)", value=True
-    )
+    # 4. To League
+    to_leagues = sorted(filtered["to_league"].unique())
+    sel_to_league = st.sidebar.selectbox("To League", ["All"] + to_leagues)
+    if sel_to_league != "All":
+        filtered = filtered[filtered["to_league"] == sel_to_league]
+
+    # 5. Promo/releg toggle
+    include_promo = st.sidebar.checkbox("Include promotion/relegation (same team)", value=True)
     if not include_promo:
         filtered = filtered[filtered["from_team_id"] != filtered["to_team_id"]]
 
     if filtered.empty:
-        st.sidebar.warning("No transfers match these filters.")
-        return country, filtered, pd.DataFrame()
+        st.sidebar.warning("No transfers match filters.")
+        return pd.DataFrame()
 
-    # 4. Season
+    # 6. Season
     seasons = sorted(filtered["to_season"].unique())
-    sel_season = st.sidebar.selectbox(
-        "Destination Season", ["All"] + [str(s) for s in seasons]
-    )
+    sel_season = st.sidebar.selectbox("Season", ["All"] + [str(s) for s in seasons])
     if sel_season != "All":
         filtered = filtered[filtered["to_season"] == int(sel_season)]
 
-    # 5. Team
+    # 7. Position
+    positions = sorted(filtered["from_position"].unique())
+    sel_pos = st.sidebar.selectbox("Position", ["All"] + positions)
+    if sel_pos != "All":
+        filtered = filtered[filtered["from_position"] == sel_pos]
+
+    if filtered.empty:
+        st.sidebar.warning("No transfers match filters.")
+        return pd.DataFrame()
+
+    # 8. Team
     team_ids = sorted(filtered["to_team_id"].unique())
-    team_opts = {tid: team_name(tid, team_names) for tid in team_ids}
+    team_opts = {tid: tname(tid, team_names) for tid in team_ids}
     sel_team = st.sidebar.selectbox(
-        "Destination Team",
-        ["All"] + team_ids,
+        "Destination Team", ["All"] + team_ids,
         format_func=lambda x: "All" if x == "All" else team_opts.get(x, str(x)),
     )
     if sel_team != "All":
         filtered = filtered[filtered["to_team_id"] == sel_team]
 
     if filtered.empty:
-        st.sidebar.warning("No transfers match these filters.")
-        return country, filtered, pd.DataFrame()
+        st.sidebar.warning("No transfers match filters.")
+        return pd.DataFrame()
 
-    # 6. Player
-    players = (
-        filtered[["player_id", "short_name"]]
-        .drop_duplicates()
-        .sort_values("short_name")
-    )
+    # 9. Player
+    players = filtered[["player_id", "short_name"]].drop_duplicates().sort_values("short_name")
     player_opts = dict(zip(players["player_id"], players["short_name"]))
-    sel_player = st.sidebar.selectbox(
-        "Player",
-        list(player_opts.keys()),
-        format_func=lambda x: player_opts[x],
-    )
+    sel_player = st.sidebar.selectbox("Player", list(player_opts.keys()), format_func=lambda x: player_opts[x])
 
     player_data = filtered[filtered["player_id"] == sel_player]
 
-    # If multiple transfers for same player, pick one
+    # Multiple transfers
     if len(player_data) > 1:
-        labels = [
-            f"{int(r['from_season'])} → {int(r['to_season'])}"
-            for _, r in player_data.iterrows()
-        ]
-        idx = st.sidebar.selectbox("Transfer window", range(len(labels)), format_func=lambda i: labels[i])
+        labels = [f"{int(r['from_season'])} → {int(r['to_season'])} | {r['from_league']} → {r['to_league']}" for _, r in player_data.iterrows()]
+        idx = st.sidebar.selectbox("Transfer", range(len(labels)), format_func=lambda i: labels[i])
         player_data = player_data.iloc[[idx]]
 
     st.sidebar.divider()
-    st.sidebar.caption(f"📊 {len(filtered)} records | {filtered['player_id'].nunique()} players")
+    st.sidebar.caption(f"📊 {len(filtered):,} records · {filtered['player_id'].nunique():,} players")
 
-    return country, filtered, player_data
+    return player_data
 
 
-# ── Player Header ────────────────────────────────────────────────────────────
+# ── Player Card (HTML) ───────────────────────────────────────────────────────
 
-def render_header(player_row, country, team_names):
-    """Show player info banner."""
-    r = player_row.iloc[0]
-    config = COMPETITION_CONFIG[country]
-    ln = config["leagues"]
+def render_player_card(r, team_names):
+    pos = r["from_position"]
+    from_team = tname(r["from_team_id"], team_names)
+    to_team = tname(r["to_team_id"], team_names)
+    is_promo = int(r["from_team_id"]) == int(r["to_team_id"])
+    transfer_tag = "PROMOTION / RELEGATION" if is_promo else "TRANSFER"
+    mins_before = f"{r['from_Minutes']:.0f}"
+    mins_after = f"{r['to_Minutes']:.0f}" if pd.notna(r.get("to_Minutes")) else "—"
 
-    from_league = ln.get(int(r["from_competition"]), str(r["from_competition"]))
-    to_league = ln.get(int(r["to_competition"]), str(r["to_competition"]))
-    from_team = team_name(r["from_team_id"], team_names)
-    to_team = team_name(r["to_team_id"], team_names)
-    is_same_team = int(r["from_team_id"]) == int(r["to_team_id"])
-    transfer_type = "🔄 Promotion/Relegation" if is_same_team else "➡️ Transfer"
+    st.markdown(f"""
+    <div class="player-card">
+        <h1>{r['short_name']} <span class="position-badge">{pos}</span></h1>
+        <div class="transfer-route">
+            <b>{r['from_league']}</b> ({from_team}) → <b>{r['to_league']}</b> ({to_team})
+            &nbsp;·&nbsp; {transfer_tag}
+        </div>
+        <div class="transfer-route" style="margin-top:6px;">
+            Season <b>{int(r['from_season'])}</b> → <b>{int(r['to_season'])}</b>
+            &nbsp;·&nbsp; Minutes: <b>{mins_before}</b> → <b>{mins_after}</b>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
-    st.markdown(f"## {r['short_name']}  &nbsp; `{r['from_position']}`")
-    st.markdown(
-        f"**{from_league}** ({from_team}) → **{to_league}** ({to_team}) "
-        f"&nbsp; | &nbsp; {transfer_type}"
-    )
 
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("From Season", int(r["from_season"]))
-    c2.metric("To Season", int(r["to_season"]))
-    c3.metric("Minutes Before", f"{r['from_Minutes']:.0f}")
-    c4.metric(
-        "Minutes After",
-        f"{r['to_Minutes']:.0f}" if pd.notna(r.get("to_Minutes")) else "N/A",
-    )
+# ── KPI Identity Vector ─────────────────────────────────────────────────────
+
+def render_identity_vector(r, pos):
+    config = POSITION_CONFIG.get(pos)
+    if not config:
+        return
+
+    st.markdown('<div class="section-header">Player Identity Vector</div>', unsafe_allow_html=True)
+
+    cards_html = '<div class="kpi-grid">'
+    for label, metric in config["identity"]:
+        fv = r.get(f"from_{metric}")
+        tv = r.get(f"to_{metric}")
+        if pd.notna(fv) and pd.notna(tv):
+            fv, tv = float(fv), float(tv)
+            delta = tv - fv
+            delta_cls = "delta-up" if delta > 0.05 else ("delta-down" if delta < -0.05 else "delta-neutral")
+            delta_arrow = "▲" if delta > 0.05 else ("▼" if delta < -0.05 else "—")
+            cards_html += f"""
+            <div class="kpi-card">
+                <div class="label">{label}</div>
+                <div class="value">{tv:.2f}</div>
+                <div class="delta {delta_cls}">{delta_arrow} {delta:+.2f}</div>
+            </div>"""
+        else:
+            cards_html += f"""
+            <div class="kpi-card">
+                <div class="label">{label}</div>
+                <div class="value">—</div>
+                <div class="delta delta-neutral">N/A</div>
+            </div>"""
+    cards_html += '</div>'
+    st.markdown(cards_html, unsafe_allow_html=True)
 
 
 # ── Radar Chart ──────────────────────────────────────────────────────────────
 
-def render_radar(player_row):
-    """Plotly radar chart for the 20 composite metrics."""
-    r = player_row.iloc[0]
+def render_radar(r):
     labels, from_vals, to_vals = [], [], []
-
     for m in RADAR_METRICS:
-        fv = r.get(f"from_{m}")
-        tv = r.get(f"to_{m}")
+        fv, tv = r.get(f"from_{m}"), r.get(f"to_{m}")
         if pd.notna(fv) and pd.notna(tv):
             labels.append(m)
             from_vals.append(float(fv))
             to_vals.append(float(tv))
 
     if not labels:
-        st.warning("No composite metrics available for this player.")
         return
 
-    # Close the polygon
-    labels_closed = labels + [labels[0]]
-    from_closed = from_vals + [from_vals[0]]
-    to_closed = to_vals + [to_vals[0]]
+    st.markdown('<div class="section-header">Composite Performance Radar</div>', unsafe_allow_html=True)
 
-    all_vals = from_vals + to_vals
-    rng = max(abs(min(all_vals)), abs(max(all_vals))) * 1.15
+    labels_c = labels + [labels[0]]
+    from_c = from_vals + [from_vals[0]]
+    to_c = to_vals + [to_vals[0]]
+    rng = max(abs(min(from_vals + to_vals)), abs(max(from_vals + to_vals))) * 1.15
 
     fig = go.Figure()
     fig.add_trace(go.Scatterpolar(
-        r=from_closed, theta=labels_closed, fill="toself",
-        name="Before", opacity=0.5, line=dict(color="#636EFA", width=2),
+        r=from_c, theta=labels_c, fill="toself", name="Before",
+        opacity=0.45, line=dict(color=C_BEFORE, width=2),
+        fillcolor="rgba(99,179,237,0.15)",
     ))
     fig.add_trace(go.Scatterpolar(
-        r=to_closed, theta=labels_closed, fill="toself",
-        name="After", opacity=0.5, line=dict(color="#EF553B", width=2),
+        r=to_c, theta=labels_c, fill="toself", name="After",
+        opacity=0.6, line=dict(color=C_AFTER, width=2),
+        fillcolor="rgba(233,69,96,0.15)",
     ))
     fig.update_layout(
-        polar=dict(radialaxis=dict(visible=True, range=[-rng, rng])),
+        polar=dict(
+            bgcolor="#0f0f23",
+            radialaxis=dict(visible=True, range=[-rng, rng], gridcolor="#1a1a4e",
+                            tickfont=dict(color="#556", size=9)),
+            angularaxis=dict(gridcolor="#1a1a4e", tickfont=dict(color="#a0aec0", size=10)),
+        ),
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="#a0aec0"),
         showlegend=True,
-        height=600,
-        margin=dict(t=40, b=40),
+        legend=dict(orientation="h", yanchor="bottom", y=-0.15, xanchor="center", x=0.5,
+                    font=dict(size=12)),
+        height=520, margin=dict(t=30, b=60, l=60, r=60),
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    # Summary table below radar
-    radar_df = pd.DataFrame({
-        "Metric": labels,
-        "Before": from_vals,
-        "After": to_vals,
-        "Delta": [t - f for f, t in zip(from_vals, to_vals)],
-    }).sort_values("Delta", ascending=False)
-    radar_df[["Before", "After", "Delta"]] = radar_df[["Before", "After", "Delta"]].round(2)
-    st.dataframe(radar_df, use_container_width=True, hide_index=True)
 
+# ── Detail Metrics ───────────────────────────────────────────────────────────
 
-# ── Metric Comparison (Tabs 2-5) ────────────────────────────────────────────
+def render_detail_metrics(r, pos):
+    config = POSITION_CONFIG.get(pos)
+    if not config:
+        return
 
-def render_metric_comparison(player_row, metrics, tab_title, use_zscore=False):
-    """Bar chart + delta indicators for a metric group."""
-    r = player_row.iloc[0]
+    metrics = config["detail_metrics"]
+
+    st.markdown('<div class="section-header">Detailed Metrics</div>', unsafe_allow_html=True)
+
+    use_z = st.toggle("Show Z-Scores (league-relative)", key="z_detail")
+
+    # Collect data
     data = []
-
     for m in metrics:
-        col_name = f"z_score_{m}" if use_zscore else m
-        from_col = f"from_{col_name}"
-        to_col = f"to_{col_name}"
-
-        fv = r.get(from_col)
-        tv = r.get(to_col)
+        col = f"z_score_{m}" if use_z else m
+        fv, tv = r.get(f"from_{col}"), r.get(f"to_{col}")
         if pd.notna(fv) and pd.notna(tv):
-            delta = float(tv) - float(fv)
-            data.append({
-                "metric": m,
-                "Before": round(float(fv), 3),
-                "After": round(float(tv), 3),
-                "Delta": round(delta, 3),
-            })
+            data.append({"metric": m, "before": float(fv), "after": float(tv), "delta": float(tv) - float(fv)})
 
     if not data:
-        st.info("No data available for these metrics with this player.")
+        st.info("No detail metrics available.")
         return
 
     mdf = pd.DataFrame(data)
@@ -348,175 +516,185 @@ def render_metric_comparison(player_row, metrics, tab_title, use_zscore=False):
     # Bar chart
     fig = go.Figure()
     fig.add_trace(go.Bar(
-        name="Before", x=mdf["metric"], y=mdf["Before"], marker_color="#636EFA",
+        name="Before", x=mdf["metric"], y=mdf["before"],
+        marker_color=C_BEFORE, marker_line=dict(width=0), opacity=0.85,
     ))
     fig.add_trace(go.Bar(
-        name="After", x=mdf["metric"], y=mdf["After"], marker_color="#EF553B",
+        name="After", x=mdf["metric"], y=mdf["after"],
+        marker_color=C_AFTER, marker_line=dict(width=0), opacity=0.85,
     ))
     fig.update_layout(
         barmode="group",
-        title=f"{tab_title} {'(Z-Scores)' if use_zscore else '(Per 90 / Rate)'}",
-        xaxis_tickangle=-45,
-        height=480,
-        margin=dict(b=160),
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="#a0aec0", size=11),
+        xaxis=dict(tickangle=-45, gridcolor="#1a1a4e", tickfont=dict(size=9)),
+        yaxis=dict(gridcolor="#1a1a4e"),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5),
+        height=420, margin=dict(b=140, t=40),
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    # Delta metrics grid
-    n_cols = min(len(data), 5)
-    for row_start in range(0, len(data), n_cols):
-        cols = st.columns(n_cols)
-        for i, d in enumerate(data[row_start : row_start + n_cols]):
-            cols[i].metric(
-                label=d["metric"][:30],
-                value=f"{d['After']:.2f}",
-                delta=f"{d['Delta']:+.3f}",
-            )
+    # Metric cards grid
+    suffix = " (z)" if use_z else ""
+    cards_html = '<div class="metric-row">'
+    for d in data:
+        delta_cls = "delta-up" if d["delta"] > 0.01 else ("delta-down" if d["delta"] < -0.01 else "delta-neutral")
+        cards_html += f"""
+        <div class="metric-item">
+            <div class="m-label">{d['metric']}{suffix}</div>
+            <div class="m-vals">
+                <span class="m-before">{d['before']:.2f}</span>
+                <span class="m-arrow">→</span>
+                <span class="m-after">{d['after']:.2f}</span>
+            </div>
+            <div class="delta {delta_cls}" style="font-size:0.75rem; margin-top:2px;">Δ {d['delta']:+.3f}</div>
+        </div>"""
+    cards_html += '</div>'
+    st.markdown(cards_html, unsafe_allow_html=True)
 
 
 # ── LLM Analysis ────────────────────────────────────────────────────────────
 
-def build_llm_prompt(player_row, country, team_names):
-    """Build structured prompt for Claude interpretation."""
-    r = player_row.iloc[0]
-    config = COMPETITION_CONFIG[country]
-    ln = config["leagues"]
-
-    from_league = ln.get(int(r["from_competition"]), "?")
-    to_league = ln.get(int(r["to_competition"]), "?")
-    from_team = team_name(r["from_team_id"], team_names)
-    to_team = team_name(r["to_team_id"], team_names)
-
-    # Radar changes
-    radar_lines = []
-    for m in RADAR_METRICS:
-        fv, tv = r.get(f"from_{m}"), r.get(f"to_{m}")
-        if pd.notna(fv) and pd.notna(tv):
-            radar_lines.append(f"  {m}: {fv:.2f} → {tv:.2f} (Δ {tv - fv:+.2f})")
-
-    # Per-90 changes: collect all, sort, show top movers
-    all_per90 = []
-    for group in [ATTACKING_METRICS, DEFENSIVE_METRICS, PASSING_METRICS, PHYSICAL_METRICS]:
-        for m in group:
-            fv, tv = r.get(f"from_{m}"), r.get(f"to_{m}")
-            if pd.notna(fv) and pd.notna(tv) and fv != 0:
-                pct = (tv - fv) / abs(fv) * 100
-                all_per90.append((m, float(fv), float(tv), float(tv - fv), pct))
-
-    all_per90.sort(key=lambda x: x[4], reverse=True)
-    top_up = all_per90[:8]
-    top_down = all_per90[-8:]
-
-    prompt = f"""You are a football performance analyst. Analyze this player's performance
-change after a cross-division transfer. Answer in Spanish.
-
-PLAYER: {r['short_name']}
-POSITION: {r['from_position']}
-TRANSFER: {from_league} ({from_team}) → {to_league} ({to_team})
-SEASONS: {r['from_season']} → {r['to_season']}
-MINUTES: {r['from_Minutes']:.0f} → {r.get('to_Minutes', 'N/A')}
-
-COMPOSITE METRICS (standardized, higher = better):
-{chr(10).join(radar_lines)}
-
-TOP IMPROVEMENTS (per 90):
-{chr(10).join(f'  {m[0]}: {m[1]:.2f} → {m[2]:.2f} ({m[4]:+.1f}%)' for m in top_up)}
-
-TOP DECLINES (per 90):
-{chr(10).join(f'  {m[0]}: {m[1]:.2f} → {m[2]:.2f} ({m[4]:+.1f}%)' for m in top_down)}
-
-Provide:
-1. Executive summary (2-3 sentences) of performance change.
-2. Key strengths maintained or improved.
-3. Areas of concern or decline.
-4. Context: consider transfer direction (promotion to a higher division means
-   maintaining metrics is impressive; relegation to a lower division and improving
-   is expected).
-5. Overall verdict: did this transfer work based on the data?
-
-Be concise (under 250 words), football-specific, and data-driven."""
-
-    return prompt
-
-
-def get_llm_analysis(prompt):
-    """Call OpenAI API."""
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_llm_analysis(player_id, from_comp, to_comp, from_season, to_season, pos, prompt):
+    """Cached LLM call keyed by player+transfer combination."""
     api_key = os.environ.get("OPENAI_API_KEY", "")
     if not api_key:
         try:
             api_key = st.secrets["OPENAI_API_KEY"]
         except Exception:
-            return "⚠️ Set `OPENAI_API_KEY` as environment variable or in `.streamlit/secrets.toml`."
+            return None
 
     try:
         from openai import OpenAI
-
         client = OpenAI(api_key=api_key)
         response = client.chat.completions.create(
-            model="gpt-4o",
-            max_tokens=1024,
+            model="gpt-4o-mini",
+            max_tokens=600,
             messages=[{"role": "user", "content": prompt}],
         )
         return response.choices[0].message.content
     except Exception as e:
-        return f"⚠️ Error calling OpenAI API: {e}"
+        return f"⚠️ API Error: {e}"
+
+
+def build_prompt(r, pos, team_names):
+    config = POSITION_CONFIG.get(pos, {})
+    focus = config.get("llm_focus", "overall performance")
+    from_team = tname(r["from_team_id"], team_names)
+    to_team = tname(r["to_team_id"], team_names)
+
+    # Identity vector
+    identity_lines = []
+    for label, metric in config.get("identity", []):
+        fv, tv = r.get(f"from_{metric}"), r.get(f"to_{metric}")
+        if pd.notna(fv) and pd.notna(tv):
+            identity_lines.append(f"  {label} ({metric}): {fv:.2f} → {tv:.2f} (Δ {tv - fv:+.2f})")
+
+    # Detail metrics: top movers
+    detail_changes = []
+    for m in config.get("detail_metrics", []):
+        fv, tv = r.get(f"from_{m}"), r.get(f"to_{m}")
+        if pd.notna(fv) and pd.notna(tv) and fv != 0:
+            pct = (tv - fv) / abs(fv) * 100
+            detail_changes.append((m, float(fv), float(tv), pct))
+    detail_changes.sort(key=lambda x: x[3], reverse=True)
+
+    prompt = f"""You are an elite football performance analyst. Analyze this {pos}'s
+performance change after a cross-league transfer. Answer in Spanish.
+
+PLAYER: {r['short_name']}
+POSITION: {pos}
+TRANSFER: {r['from_league']} ({from_team}) → {r['to_league']} ({to_team})
+SEASONS: {r['from_season']} → {r['to_season']}
+MINUTES: {r['from_Minutes']:.0f} → {r.get('to_Minutes', 0):.0f}
+
+IDENTITY VECTOR (key {pos} KPIs):
+{chr(10).join(identity_lines)}
+
+TOP IMPROVEMENTS:
+{chr(10).join(f'  {m[0]}: {m[1]:.2f} → {m[2]:.2f} ({m[3]:+.1f}%)' for m in detail_changes[:5])}
+
+TOP DECLINES:
+{chr(10).join(f'  {m[0]}: {m[1]:.2f} → {m[2]:.2f} ({m[3]:+.1f}%)' for m in detail_changes[-5:])}
+
+FOCUS YOUR ANALYSIS ON: {focus}
+
+Provide:
+1. Executive summary (2 sentences max).
+2. Key strengths for a {pos} that improved or held.
+3. Concerns specific to the {pos} role.
+4. Context: moving to a higher-level league and maintaining metrics is impressive;
+   moving down and improving is expected. Factor this in.
+5. One-line verdict.
+
+Be concise (under 200 words), data-driven, position-specific."""
+
+    return prompt
+
+
+def render_ai_analysis(r, pos, team_names):
+    st.markdown('<div class="section-header">AI Performance Analysis</div>', unsafe_allow_html=True)
+
+    prompt = build_prompt(r, pos, team_names)
+    with st.spinner("Generating analysis..."):
+        analysis = get_llm_analysis(
+            int(r["player_id"]), int(r["from_competition"]), int(r["to_competition"]),
+            int(r["from_season"]), int(r["to_season"]), pos, prompt,
+        )
+
+    if analysis is None:
+        st.markdown("""
+        <div class="ai-card">
+            <h3>⚠️ API Key Required</h3>
+            <p>Set <code>OPENAI_API_KEY</code> as environment variable to enable AI analysis.</p>
+        </div>""", unsafe_allow_html=True)
+    elif analysis.startswith("⚠️"):
+        st.markdown(f"""
+        <div class="ai-card"><h3>⚠️ Error</h3><p>{analysis}</p></div>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown(f"""
+        <div class="ai-card">
+            <h3>🤖 AI Analysis · GPT-4o-mini</h3>
+            <p>{analysis}</p>
+        </div>""", unsafe_allow_html=True)
 
 
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 def main():
-    st.title("⚽ Cross-Division Transfer Performance")
-    st.caption(
-        "Compare player metrics before and after transfers between divisions "
-        "(same position only)"
-    )
-
-    df, _comps, team_names = load_data()
-    country, filtered, player_data = render_sidebar(df, team_names)
+    df, team_names = load_data()
+    player_data = render_sidebar(df, team_names)
 
     if player_data.empty:
-        st.info("👈 Select filters in the sidebar to explore a player.")
+        st.markdown("""
+        <div style="text-align:center; padding:80px 20px; color:#556;">
+            <h2 style="color:#e94560;">Transfer Performance Lab</h2>
+            <p style="font-size:1.1rem;">Select filters in the sidebar to explore a player's
+            performance before and after a cross-league transfer.</p>
+            <p style="color:#445; font-size:0.9rem;">62,578 transfers · 38,767 players · 327 competitions</p>
+        </div>
+        """, unsafe_allow_html=True)
         return
 
-    render_header(player_data, country, team_names)
-    st.divider()
+    r = player_data.iloc[0]
+    pos = r["from_position"]
 
-    # ── Tabs ─────────────────────────────────────────────────────────────
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
-        "🎯 Radar Overview",
-        "⚡ Attacking",
-        "🛡️ Defensive",
-        "🎯 Passing & Progression",
-        "💪 Physical & Engagement",
-    ])
+    # 1. Player card
+    render_player_card(r, team_names)
 
-    with tab1:
-        render_radar(player_data)
+    # 2. Identity vector
+    render_identity_vector(r, pos)
 
-    with tab2:
-        use_z = st.toggle("Show Z-Scores (league-relative)", key="z_atk")
-        render_metric_comparison(player_data, ATTACKING_METRICS, "Attacking", use_z)
+    # 3. Radar
+    render_radar(r)
 
-    with tab3:
-        use_z = st.toggle("Show Z-Scores (league-relative)", key="z_def")
-        render_metric_comparison(player_data, DEFENSIVE_METRICS, "Defensive", use_z)
+    # 4. Detail metrics
+    render_detail_metrics(r, pos)
 
-    with tab4:
-        use_z = st.toggle("Show Z-Scores (league-relative)", key="z_pass")
-        render_metric_comparison(player_data, PASSING_METRICS, "Passing & Progression", use_z)
-
-    with tab5:
-        use_z = st.toggle("Show Z-Scores (league-relative)", key="z_phys")
-        render_metric_comparison(player_data, PHYSICAL_METRICS, "Physical & Engagement", use_z)
-
-    # ── LLM Analysis ─────────────────────────────────────────────────────
-    st.divider()
-    if st.button("🤖 Generate AI Analysis", type="primary"):
-        with st.spinner("Analyzing with Claude..."):
-            prompt = build_llm_prompt(player_data, country, team_names)
-            analysis = get_llm_analysis(prompt)
-        st.markdown("### 🤖 AI Performance Analysis")
-        st.markdown(analysis)
+    # 5. AI Analysis (automatic)
+    render_ai_analysis(r, pos, team_names)
 
 
 if __name__ == "__main__":
