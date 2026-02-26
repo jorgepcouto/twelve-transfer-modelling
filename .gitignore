@@ -206,3 +206,18 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 .DS_Store
+
+# Data files (kept in thesis_data/, not in this repo)
+*.parquet
+*.csv
+*.xlsx
+
+# Large output files
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.svg
+
+# Claude Code
+.claude/
