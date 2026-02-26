@@ -1,5 +1,10 @@
 # Transfer Modelling: Team Tactical DNA & Player Archetypes
 
+![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python&logoColor=white)
+![Plotly](https://img.shields.io/badge/Plotly-Interactive%20Charts-3F4F75?logo=plotly&logoColor=white)
+![scikit-learn](https://img.shields.io/badge/scikit--learn-ML-F7931E?logo=scikit-learn&logoColor=white)
+![License](https://img.shields.io/badge/License-MIT-green)
+
 Analysis of football playing styles and player role classification using match-level data from **Twelve Football (Wyscout)** and transfer data from **Transfermarkt**. Built as part of a master's thesis on data-driven player transfer valuation.
 
 ---
