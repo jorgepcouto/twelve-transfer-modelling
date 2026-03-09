@@ -1,0 +1,68 @@
+class StyleQuality(Quality):
+    """
+    Note: we remove - signs from metric weights because we handle that when calculating metric z-scores.
+    Check Metric.higher_is_better to see if a metric is better when higher or lower.
+    """
+
+    DEFENCE = (
+        "The team's defensive style, ranging from compact low blocks that protect space near goal to aggressive high pressing that seeks to win the ball high on the pitch, closer to the opponent's goal ",
+        {
+            s.TEAM_DEFENSIVE_INTENSITY: 1.0,
+            s.PPDA: 1.0,
+            s.FINAL_THIRD_RECOVERIES_PCT: 1.0,
+            s.TEAM_DEFENSIVE_LINE_HEIGHT: 1.0,
+        },
+    )
+    DEFENSIVE_TRANSITION = (
+        "The team's style after losing possession, ranging from instant counter pressing to regain the ball to dropping back quickly into a compact defensive shape ",
+        {
+            s.RECOVERIES_WITHIN_5S_PCT: 1.0,
+            s.TIME_TO_DEFENSIVE_ACTION_AFTER_LOSS_IN_AH: 2.0,
+            s.TIME_TO_DEFENSIVE_ACTION_AFTER_LOSS_IN_OH: 1.0,
+        },
+    )
+
+    ATTACKING_TRANSITION = (
+        "The team's style after winning possession, ranging from retention and controlled build-up to quick counter attacks that take advantage of space immediately ",
+        {
+            s.POSSESSIONS_RETAINED_AFTER_5S_PCT: 0.5,
+            s.FINAL_THIRD_ENTRIES_WITHIN_10S_AFTER_OH_RECOVERY_PCT: 0.5,
+            s.FIRST_PASS_FORWARD_PCT: 1.0,
+            s.TIME_TO_FORWARD_PASS_AFTER_OH_RECOVERY: 0.5,
+        },
+    )
+
+    ATTACK = (
+        "The team's attacking style, ranging from direct long balls that bypass midfield to patient build-up play that progresses through structured passing and positioning ",
+        {
+            s.LONG_BALL_PCT: 2.0,
+            s.FORWARD_PASSES_FROM_MIDDLE_THIRD_PCT: 1.0,
+            s.BUILDUP_FROM_GOALKICK_PCT: 1.0,
+        },
+    )
+
+    PENETRATION = (
+        "The way the team advances through defensive lines, ranging from wide crossing deliveries into the box to progressive carrying through dribbles or runs ",
+        {
+            s.BOX_ENTRIES_FROM_CARRIES_PCT: 2.0,
+            s.BOX_ENTRIES_FROM_CROSSES_PCT: 2.0,
+            s.CROSSES_PER_FINAL_THIRD_ENTRY: 1.0,
+        },
+    )
+
+    CHANCE_CREATION = (
+        "The way the team generates scoring opportunities, ranging from sustained possession that patiently creates openings to direct play that produces chances quickly ",
+        {
+            s.SHOTS_PER_FINAL_THIRD_PASS: 1.0,
+            s.SHOTS_FROM_DIRECT_ATTACKS_PCT: 2.0,
+            s.SHOTS_FROM_SUSTAINED_ATTACKS_PCT: 2.0,
+        },
+    )
+
+    OUTCOME = (
+        "The result of the team's performance ",
+        {
+            s.XPOINTS: 1.5,
+            s.POINTS: 1.0,
+        },
+    )
